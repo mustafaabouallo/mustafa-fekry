@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Mustafa Fekry — cinematic digital identity (EN/AR). IT Manager, Frontend Engineer, Creative Director.">
+<meta name="description" content="Mustafa Fekry — cinematic digital identity (EN/AR).">
 </head>
 <body>
 <title>Mustafa Fekry — Digital Identity</title>
@@ -434,13 +434,14 @@ a{color:inherit;text-decoration:none}
     if(y<innerHeight){var p=y/innerHeight; var hc=hero.querySelector('.hero-content');
       hc.style.transform='translateY('+(-p*80)+'px)'; hc.style.opacity=String(1-p*1.1);
       hero.querySelector('.hero-fallback').style.transform='scale('+(1.04+p*0.12)+')';
-      if(window.__heroGL)window.__heroGL.setZoom(1.0+p*0.18);            // hero: zooms in as you scroll away
+      if(window.__heroGL)window.__heroGL.setZoom(1.0+p*0.22);            // hero: zooms in as you scroll away
     }
     if(sceneMedia&&sceneImg){var r=sceneMedia.parentElement.getBoundingClientRect();
       if(r.bottom>0&&r.top<innerHeight){var q=(innerHeight-r.top)/(innerHeight+r.height);
         sceneImg.style.transform='translateY('+((q-.5)*-7)+'%)';                     // fallback img parallax
         var qc=Math.max(0,Math.min(1,q));
-        if(window.__sceneGL)window.__sceneGL.setZoom(1.02+0.16*(1-Math.sin(qc*Math.PI))); // zoom in → out → in
+        // linear V-curve: zoomed IN on entry -> OUT at centre -> IN on exit (pronounced, no flattening)
+        if(window.__sceneGL)window.__sceneGL.setZoom(1.0+0.34*Math.abs(2*qc-1));
       }}
   }
   if(lenis)lenis.on('scroll',onScroll); else window.addEventListener('scroll',onScroll,{passive:true});
@@ -507,7 +508,9 @@ a{color:inherit;text-decoration:none}
     requestAnimationFrame(draw);
     return {setZoom:function(v){zoomT=v;}};
   }
-  var heroSrc=document.querySelector('.hero-fallback').style.backgroundImage.slice(5,-2).replace(/["']/g,'');
+  // read from COMPUTED style (the bg is set by a CSS rule, not inline) — .style would be empty
+  var _hf=document.querySelector('.hero-fallback');
+  var heroSrc=getComputedStyle(_hf).backgroundImage.replace(/^url\((['"]?)/,'').replace(/(['"]?)\)$/,'');
   var heroGL=livingImage(document.getElementById('gl'),heroSrc,0.06,function(){hero.classList.add('gl-ready');});
   var scEl=document.querySelector('.scene'), scImgEl=document.getElementById('sceneImg'), sceneGL=null;
   if(scEl&&scImgEl)sceneGL=livingImage(document.getElementById('glScene'),scImgEl.src,-0.28,function(){scEl.classList.add('scene-ready');});
@@ -538,11 +541,19 @@ a{color:inherit;text-decoration:none}
     });
   }
   function fade(to,dur){var t=actx.currentTime;master.gain.cancelScheduledValues(t);master.gain.setValueAtTime(master.gain.value,t);master.gain.linearRampToValueAtTime(to,t+dur);}
-  function play(){if(!actx)buildAudio();if(actx.state==='suspended'){try{actx.resume();}catch(e){}}if(!playing){playing=true;snd&&snd.classList.add('playing');fade(0.18,2.5);}}
+  var EVTS=['pointerdown','click','keydown','touchstart'];   // NOTE: scroll/wheel do NOT grant audio permission
+  function removeFI(){EVTS.forEach(function(e){window.removeEventListener(e,firstInteract);});}
+  function play(){
+    if(!actx)buildAudio();
+    function go(){ if(!playing){playing=true; snd&&snd.classList.add('playing'); fade(0.22,2.0);} removeFI(); }
+    if(actx.state==='suspended'){
+      var p=null; try{p=actx.resume();}catch(e){}
+      if(p&&p.then){p.then(go).catch(function(){});}else{go();}   // keep listeners if it fails -> retry next click
+    } else { go(); }
+  }
   function stop(){if(actx&&playing){playing=false;snd&&snd.classList.remove('playing');fade(0.0,0.6);}}
-  function removeFI(){['pointerdown','keydown','wheel','touchstart'].forEach(function(e){window.removeEventListener(e,firstInteract);});}
-  function firstInteract(ev){if(ev&&ev.target&&ev.target.closest&&ev.target.closest('#sound'))return;removeFI();play();}
-  ['pointerdown','keydown','wheel','touchstart'].forEach(function(e){window.addEventListener(e,firstInteract,{passive:true});});
+  function firstInteract(ev){if(ev&&ev.target&&ev.target.closest&&ev.target.closest('#sound'))return;play();}
+  EVTS.forEach(function(e){window.addEventListener(e,firstInteract,{passive:true});});
   snd&&snd.addEventListener('click',function(){removeFI();if(playing)stop();else play();});
 })();
 </script>
