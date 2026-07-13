@@ -548,11 +548,34 @@ a{color:inherit;text-decoration:none}
     if(pr&&pr.then){ pr.then(ok).catch(function(e){ audErr=String(e); }); }  // keep listeners -> retry next click
     else if(pr!==null||amb.currentTime>=0){ ok(); }
   }
-  function stop(){ if(playing){ playing=false; snd&&snd.classList.remove('playing');
+  function stop(){ if(playing){ playing=false; pausedByHide=false; snd&&snd.classList.remove('playing');
     fadeTo(0,700,function(){ try{amb.pause();}catch(e){} }); } }
   function firstInteract(ev){ if(ev&&ev.target&&ev.target.closest&&ev.target.closest('#sound'))return; play(); }
   EVTS.forEach(function(e){window.addEventListener(e,firstInteract,{passive:true});});
   snd&&snd.addEventListener('click',function(){ removeFI(); if(playing)stop(); else play(); });
+
+  /* stop the music the moment the user leaves the page (tab switch, minimise,
+     phone home-screen / app-switch) — and resume it when they come back. */
+  var pausedByHide=false;
+  function hardPause(){                       // depends on the ELEMENT's real state, not an internal flag
+    if(!amb||amb.paused)return;
+    pausedByHide=true;
+    if(fadeRAF){cancelAnimationFrame(fadeRAF);fadeRAF=null;}
+    try{amb.pause();}catch(e){}
+  }
+  function resumeAfterHide(){
+    if(!amb||!pausedByHide)return;
+    pausedByHide=false;
+    try{ amb.volume=0; var p=amb.play(); if(p&&p.catch)p.catch(function(){}); fadeTo(VOL,900);
+      playing=true; snd&&snd.classList.add('playing');
+    }catch(e){}
+  }
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden) hardPause(); else resumeAfterHide();
+  });
+  ['pagehide','freeze','blur'].forEach(function(evt){ window.addEventListener(evt,hardPause); });
+  window.addEventListener('focus',function(){ if(!document.hidden) resumeAfterHide(); });
+
   window.__audioState=function(){ return amb?{src:(amb.currentSrc||'').split('/').pop(),paused:amb.paused,
     vol:+amb.volume.toFixed(3),t:+amb.currentTime.toFixed(2),playing:playing,err:audErr,ready:amb.readyState}:{no:'audio-el'}; };
 })();
