@@ -508,27 +508,29 @@ a{color:inherit;text-decoration:none}
     requestAnimationFrame(draw);
     return {setZoom:function(v){zoomT=v;}};
   }
-  // read from COMPUTED style (the bg is set by a CSS rule, not inline) — .style would be empty
-  var _hf=document.querySelector('.hero-fallback');
-  var heroSrc=getComputedStyle(_hf).backgroundImage.replace(/^url\((['"]?)/,'').replace(/(['"]?)\)$/,'');
-  var heroGL=livingImage(document.getElementById('gl'),heroSrc,0.06,function(){hero.classList.add('gl-ready');});
-  var scEl=document.querySelector('.scene'), scImgEl=document.getElementById('sceneImg'), sceneGL=null;
-  if(scEl&&scImgEl)sceneGL=livingImage(document.getElementById('glScene'),scImgEl.src,-0.28,function(){scEl.classList.add('scene-ready');});
-  window.__heroGL=heroGL; window.__sceneGL=sceneGL;
+  // isolated: a WebGL failure must never stop the audio/cursor code that follows
+  try{
+    // read from COMPUTED style (the bg is set by a CSS rule, not inline) — .style would be empty
+    var _hf=document.querySelector('.hero-fallback');
+    var heroSrc=getComputedStyle(_hf).backgroundImage.replace(/^url\((['"]?)/,'').replace(/(['"]?)\)$/,'');
+    window.__heroGL=livingImage(document.getElementById('gl'),heroSrc,0.06,function(){hero.classList.add('gl-ready');});
+    var scEl=document.querySelector('.scene'), scImgEl=document.getElementById('sceneImg');
+    if(scEl&&scImgEl)window.__sceneGL=livingImage(document.getElementById('glScene'),scImgEl.src,-0.28,function(){scEl.classList.add('scene-ready');});
+  }catch(e){}
 
   /* ambient sound — auto-starts on first interaction (browser autoplay policy) */
-  var snd=document.getElementById('sound'),actx=null,master=null,playing=false,started=false;
-  function buildAudio(){
+  var snd=document.getElementById('sound'),actx=null,master=null,playing=false,started=false,audErr=null;
+  function buildAudio(){try{_buildAudio();}catch(e){audErr=String(e);throw e;}}
+  function _buildAudio(){
     actx=new (window.AudioContext||window.webkitAudioContext)();
     master=actx.createGain(); master.gain.value=0;
-    var comp=actx.createDynamicsCompressor();
-    master.connect(comp); comp.connect(actx.destination);
-    // warm lowpass with a slow sweep so the pad breathes
-    var lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1200; lp.Q.value=.7; lp.connect(master);
+    master.connect(actx.destination);          // no compressor: it was squashing ~13dB off the signal
+    // brighter cutoff so small laptop/phone speakers can actually reproduce it
+    var lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2600; lp.Q.value=.6; lp.connect(master);
     var flfo=actx.createOscillator(); flfo.frequency.value=.045;
-    var fg=actx.createGain(); fg.gain.value=520; flfo.connect(fg); fg.connect(lp.frequency); flfo.start();
-    // audible A-minor pad (110–440Hz) — laptop speakers can actually reproduce this
-    var notes=[110,220,261.63,329.63,440], gains=[.26,.30,.20,.15,.07];
+    var fg=actx.createGain(); fg.gain.value=700; flfo.connect(fg); fg.connect(lp.frequency); flfo.start();
+    // A-minor pad shifted UP into the range small speakers reproduce well (220–660Hz)
+    var notes=[110,220,329.63,440,659.25], gains=[.10,.22,.16,.12,.05];
     notes.forEach(function(f,i){
       [-5,5].forEach(function(det,k){                       // detuned pair = warmth
         var o=actx.createOscillator(); o.type=(i>=3?'sine':'triangle');
@@ -545,13 +547,14 @@ a{color:inherit;text-decoration:none}
   function removeFI(){EVTS.forEach(function(e){window.removeEventListener(e,firstInteract);});}
   function play(){
     if(!actx)buildAudio();
-    function go(){ if(!playing){playing=true; snd&&snd.classList.add('playing'); fade(0.22,2.0);} removeFI(); }
+    function go(){ if(!playing){playing=true; snd&&snd.classList.add('playing'); fade(0.50,1.8);} removeFI(); }
     if(actx.state==='suspended'){
       var p=null; try{p=actx.resume();}catch(e){}
       if(p&&p.then){p.then(go).catch(function(){});}else{go();}   // keep listeners if it fails -> retry next click
     } else { go(); }
   }
   function stop(){if(actx&&playing){playing=false;snd&&snd.classList.remove('playing');fade(0.0,0.6);}}
+  window.__audioState=function(){try{return actx?{state:actx.state,gain:+master.gain.value.toFixed(4),playing:playing,err:audErr}:{actx:null,err:audErr};}catch(e){return{fatal:String(e)}}};
   function firstInteract(ev){if(ev&&ev.target&&ev.target.closest&&ev.target.closest('#sound'))return;play();}
   EVTS.forEach(function(e){window.addEventListener(e,firstInteract,{passive:true});});
   snd&&snd.addEventListener('click',function(){removeFI();if(playing)stop();else play();});
